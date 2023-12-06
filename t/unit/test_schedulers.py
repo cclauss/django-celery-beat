@@ -1,12 +1,13 @@
 import math
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as datetime_timezone
 from itertools import count
 from time import monotonic
 
 import pytest
 from celery.schedules import crontab, schedule, solar
+from django import VERSION as DJANGO_VERSION
 from django.contrib.admin.sites import AdminSite
 from django.contrib.messages.storage.fallback import FallbackStorage
 from django.test import RequestFactory, override_settings
@@ -162,7 +163,7 @@ class test_ModelEntry(SchedulerCase):
         assert self.app.timezone.key == 'Europe/Berlin'
 
         # simulate last_run_at from DB - not TZ aware but localtime
-        right_now = datetime.utcnow()
+        right_now = datetime.now(datetime_timezone.utc)
 
         m = self.create_model_crontab(
             crontab(minute='*/10'),
@@ -183,6 +184,9 @@ class test_ModelEntry(SchedulerCase):
         USE_TZ=False,
         DJANGO_CELERY_BEAT_TZ_AWARE=False
     )
+    @pytest.mark.xfail(DJANGO_VERSION >= (5, 0), reason=(
+        "SQLite backend does not support timezone-aware datetimes when USE_TZ is False."
+    ))
     @pytest.mark.usefixtures('depends_on_current_app')
     @timezone.override('Europe/Berlin')
     @pytest.mark.celery(timezone='Europe/Berlin')
@@ -193,7 +197,7 @@ class test_ModelEntry(SchedulerCase):
             time.tzset()
         assert self.app.timezone.key == 'Europe/Berlin'
         # simulate last_run_at from DB - not TZ aware but localtime
-        right_now = datetime.utcnow()
+        right_now = datetime.now(UTC)
         # make sure to use fixed date time
         monkeypatch.setattr(self.Entry, '_default_now', lambda o: right_now)
         m = self.create_model_crontab(
@@ -231,7 +235,7 @@ class test_ModelEntry(SchedulerCase):
 
         # simulate last_run_at all none, doing the same thing that
         # _default_now() would do
-        right_now = datetime.utcnow()
+        right_now = datetime.now(UTC)
 
         m = self.create_model_crontab(
             crontab(minute='*/10'),
@@ -819,6 +823,10 @@ class test_model_PeriodicTasks(SchedulerCase):
 
 
 @pytest.mark.django_db()
+@pytest.mark.xfailif(DJANGO_VERSION >= (5, 0), reason=(
+    "AttributeError: 'ChannelPromise' object has no attribute '__value__'."
+    " Did you mean: '__call__'?"
+))
 class test_modeladmin_PeriodicTaskAdmin(SchedulerCase):
     @pytest.mark.django_db()
     @pytest.fixture(autouse=True)
